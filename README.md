@@ -117,3 +117,4 @@ While previewing, click the discreet **⚙️ gear icon** at the bottom-right co
 - **Live Sliders**: Adjust overlay darkness, glow, and color balance in real time.
 - **Copy JS Config**: Copies your adjustments ready to paste into `script.js`.
 
+GitHub Pages deployment test.
