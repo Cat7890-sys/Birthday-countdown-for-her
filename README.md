@@ -108,6 +108,17 @@ Because this website uses **only pure HTML, CSS, and JavaScript**, hosting it on
 
 ---
 
+## 🌐 Supabase Online Persistent Storage
+
+The website connects directly to your Supabase project using the public **Publishable key** (`sb_publishable_...`) without requiring any server backend:
+- **Table**: `birthday_content`
+- **Fields synced**: `birthday_message`, `background_url`, `music_url`, and `updated_at`.
+- **Automatic Load**: On page load, the website queries Supabase for the latest saved birthday message.
+- **Offline Fallback**: If Supabase is unreachable or offline, the site seamlessly displays the local default message without interruption.
+- **GitHub Pages Ready**: Fully compatible with GitHub Pages static hosting.
+
+---
+
 ## 🛠️ Built-in Customization & Testing Panel
 
 While previewing, click the discreet **⚙️ gear icon** at the bottom-right corner:

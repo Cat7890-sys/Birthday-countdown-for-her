@@ -192,6 +192,181 @@ const defaultBurstPhotos = [
 // CORE APPLICATION LOGIC
 // ============================================================================
 
+// ============================================================================
+// 🌐 SUPABASE PERSISTENT STORAGE CONFIGURATION
+// ============================================================================
+const SUPABASE_URL = "https://rqehrbituhykrmiujhuk.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_o5hbaYx5BDiX8kqzNV8nYw_4gQ05n3e";
+
+let supabaseClient = null;
+let currentSupabaseRowId = 1;
+
+/**
+ * Lazily initialize the Supabase client if the official SDK is available
+ */
+function getSupabaseClient() {
+  if (supabaseClient) return supabaseClient;
+  if (typeof window !== "undefined" && window.supabase && typeof window.supabase.createClient === "function") {
+    try {
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    } catch (e) {
+      console.warn("[Supabase] Failed to init client:", e);
+    }
+  }
+  return supabaseClient;
+}
+
+/**
+ * Fetch the latest birthday content from Supabase.
+ * Tries the official Supabase SDK first, with a pure fetch REST fallback
+ * ensuring 100% compatibility with GitHub Pages.
+ */
+async function loadBirthdayContentFromSupabase() {
+  try {
+    let row = null;
+
+    // 1. Try official SDK
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from("birthday_content")
+          .select("*")
+          .order("updated_at", { ascending: false })
+          .limit(1);
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          row = data[0];
+        } else if (error) {
+          console.warn("[Supabase SDK] Query notice:", error.message);
+        }
+      } catch (sdkErr) {
+        console.warn("[Supabase SDK] Fetch error:", sdkErr);
+      }
+    }
+
+    // 2. Direct REST fallback (pure browser fetch)
+    if (!row) {
+      try {
+        const response = await fetch(
+          `${SUPABASE_URL}/rest/v1/birthday_content?select=*&order=updated_at.desc&limit=1`,
+          {
+            headers: {
+              "apikey": SUPABASE_PUBLISHABLE_KEY,
+              "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
+            }
+          }
+        );
+        if (response.ok) {
+          const rows = await response.json();
+          if (Array.isArray(rows) && rows.length > 0) {
+            row = rows[0];
+          }
+        }
+      } catch (restErr) {
+        console.warn("[Supabase REST] Offline or connection error:", restErr);
+      }
+    }
+
+    // 3. Apply retrieved content if found
+    if (row) {
+      if (row.id) {
+        currentSupabaseRowId = row.id;
+      }
+
+      // Update Birthday Message
+      if (row.birthday_message && typeof row.birthday_message === "string" && row.birthday_message.trim() !== "") {
+        currentMessage = row.birthday_message.trim();
+        if (celebrationMsg) {
+          celebrationMsg.textContent = currentMessage;
+        }
+        if (devMessageInput) {
+          devMessageInput.value = currentMessage;
+        }
+      }
+
+      // Update background URL if specified in Supabase
+      if (row.background_url && typeof row.background_url === "string" && row.background_url.trim() !== "") {
+        currentBgImage = row.background_url.trim();
+        if (devBgInput) {
+          devBgInput.value = currentBgImage;
+        }
+        setupBackground();
+      }
+
+      // Update music URL if specified in Supabase
+      if (row.music_url && typeof row.music_url === "string" && row.music_url.trim() !== "") {
+        if (bgAudio) {
+          bgAudio.src = row.music_url.trim();
+        }
+      }
+
+      setupDynamicContent();
+      console.log("[Supabase] Successfully loaded latest online birthday content:", row);
+    } else {
+      console.log("[Supabase] No remote content found. Using local fallback.");
+    }
+  } catch (err) {
+    console.warn("[Supabase] Could not load online content, maintaining local fallback:", err);
+  }
+}
+
+/**
+ * Save updated birthday content to Supabase so it persists across refreshes and devices.
+ */
+async function saveBirthdayContentToSupabase(newMessage, newBgUrl, newMusicUrl) {
+  if (!newMessage || typeof newMessage !== "string") return false;
+
+  const payload = {
+    birthday_message: newMessage.trim(),
+    background_url: (newBgUrl || "").trim(),
+    music_url: (newMusicUrl || "").trim(),
+    updated_at: new Date().toISOString()
+  };
+
+  // 1. Try official SDK
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data, error } = await client
+        .from("birthday_content")
+        .update(payload)
+        .eq("id", currentSupabaseRowId);
+
+      if (!error) {
+        console.log("[Supabase SDK] Saved online birthday content:", data);
+        return true;
+      }
+      console.warn("[Supabase SDK] Update note:", error.message);
+    } catch (sdkErr) {
+      console.warn("[Supabase SDK] Save error:", sdkErr);
+    }
+  }
+
+  // 2. Direct REST fallback
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/birthday_content?id=eq.${currentSupabaseRowId}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
+        "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+      },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log("[Supabase REST] Saved online birthday content:", data);
+      return true;
+    }
+  } catch (restErr) {
+    console.warn("[Supabase REST] Could not save content to Supabase:", restErr);
+  }
+
+  return false;
+}
+
 // State
 let targetDate = new Date(birthdayDate);
 let currentName = birthdayName;
@@ -418,6 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initBackgroundMusic();
   initGuestbook();
   initPhotoStorageAndBurstSettings();
+  loadBirthdayContentFromSupabase();
 });
 
 // Subtle Romantic Messages Rotation
@@ -1717,6 +1893,7 @@ function setupEventListeners() {
       }
       if (devMessageInput && devMessageInput.value) {
         currentMessage = devMessageInput.value.trim();
+        saveBirthdayContentToSupabase(currentMessage, currentBgImage, backgroundMusic);
       }
       if (devBgInput) {
         currentBgImage = devBgInput.value.trim();
@@ -2635,5 +2812,11 @@ function showHeroPinnedPhotos() {
       heroPhotosPinnedContainer.classList.add("settled");
     }
   }, 5000);
+}
+
+// Expose Supabase helpers for inspection or external script triggers
+if (typeof window !== "undefined") {
+  window.loadBirthdayContentFromSupabase = loadBirthdayContentFromSupabase;
+  window.saveBirthdayContentToSupabase = saveBirthdayContentToSupabase;
 }
 
